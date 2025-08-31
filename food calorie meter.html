@@ -1,0 +1,459 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Food Calories Calculator</title>
+  <meta name="description" content="Calculate calories and nutrients for foods. Search, add, and total macros with a clean, offline-ready single-page app." />
+  <style>
+    :root{
+      --bg:#0b1020; --panel:#121833; --muted:#9aa4c7; --text:#e8ecff; --accent:#7aa2ff; --accent-2:#5ee1b9; --danger:#ff6b6b;
+      --shadow: 0 10px 30px rgba(0,0,0,.35);
+      --radius: 14px;
+    }
+    *{box-sizing:border-box}
+    html,body{height:100%}
+    body{
+      margin:0; font:16px/1.5 system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Cantarell,Noto Sans,sans-serif;
+      background: radial-gradient(1000px 600px at 10% -10%, #1a245a33, transparent),
+                  radial-gradient(800px 500px at 120% 10%, #17ffc733, transparent),
+                  var(--bg);
+      color:var(--text);
+    }
+    .container{max-width:1100px; margin:32px auto; padding:0 16px}
+    header{
+      display:flex; align-items:center; gap:16px; justify-content:space-between; margin-bottom:16px;
+    }
+    .title{font-weight:800; letter-spacing:.3px; font-size: clamp(20px, 4vw, 34px)}
+    .subtitle{color:var(--muted); font-size:14px}
+    .card{background:linear-gradient(180deg,#16204a,#111737); border:1px solid #2b3564; box-shadow:var(--shadow); border-radius:var(--radius)}
+    .section{padding:18px}
+    .grid{display:grid; gap:16px}
+    @media(min-width:900px){
+      .grid-2{grid-template-columns: 1.2fr .8fr}
+    }
+    .searchbar{display:flex; gap:10px; align-items:center}
+    .searchbar input{flex:1; padding:12px 14px; border-radius:12px; border:1px solid #2b3564; background:#0f1533; color:var(--text)}
+    .btn{border:0; padding:10px 14px; border-radius:12px; background:linear-gradient(180deg,#6b90ff,#4b6ff9); color:#fff; font-weight:600; cursor:pointer}
+    .btn:disabled{opacity:.5; cursor:not-allowed}
+    .btn.secondary{background:#0f1533; border:1px solid #2b3564; color:var(--text)}
+    .btn.ghost{background:transparent; border:1px dashed #34407a; color:var(--muted)}
+    .btn.danger{background:linear-gradient(180deg,#ff8181,#ff5c5c)}
+    .pill{display:inline-flex; align-items:center; gap:8px; padding:6px 10px; border-radius:999px; background:#0f1533; border:1px solid #2b3564; color:var(--muted); font-size:12px}
+    .suggestions{position:relative}
+    .dropdown{position:absolute; top:44px; left:0; right:0; background:#0f1533; border:1px solid #2b3564; border-radius:12px; max-height:260px; overflow:auto; z-index:10}
+    .dropdown button{width:100%; text-align:left; padding:10px 12px; background:transparent; border:0; color:#cfe1ff; cursor:pointer}
+    .dropdown button:hover, .dropdown button[aria-selected="true"]{background:#1b2350}
+    .row{display:grid; grid-template-columns: 1.4fr .7fr repeat(4, .6fr) 60px; gap:10px; align-items:center; padding:10px 12px; border-bottom:1px dashed #2b3564}
+    .row:last-child{border-bottom:0}
+    .row input{width:100%; padding:8px 10px; border-radius:10px; border:1px solid #2b3564; background:#0f1533; color:var(--text)}
+    .rows{max-height:420px; overflow:auto}
+    .muted{color:var(--muted)}
+    .totals{display:grid; grid-template-columns: repeat(4,1fr); gap:12px}
+    .stat{padding:14px; border-radius:14px; background:linear-gradient(180deg,#0f1533,#0b112b); border:1px solid #2b3564; text-align:center}
+    .stat .val{font-weight:800; font-size:22px}
+    .flex{display:flex; gap:10px; align-items:center}
+    .right{justify-content:flex-end}
+    .space{display:flex; justify-content:space-between; gap:12px; align-items:center}
+    .small{font-size:12px}
+    .footer{margin-top:18px; color:var(--muted); font-size:12px}
+    .kpi{font-size:12px; color:#a8ffd9}
+    .hidden{display:none}
+    .tag{padding:6px 8px; border:1px solid #2b3564; border-radius:999px; background:#0f1533; color:#a5b4fc; font-size:11px}
+    canvas{width:100%; height:260px}
+    .divider{height:1px; background:#1e2a59; margin:8px 0}
+    
+    /* table headers */
+    .thead{display:grid; grid-template-columns: 1.4fr .7fr repeat(4, .6fr) 60px; gap:10px; padding:12px; color:#a5b4fc; border-bottom:1px solid #2b3564; position:sticky; top:0; background:#141a3b}
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <div>
+        <div class="title">Food Calories Calculator</div>
+        <div class="subtitle">Search foods, add servings, and get instant totals for calories & macros. Works offline. Data is per 100 g unless noted.</div>
+      </div>
+      <div class="flex right">
+        <button class="btn secondary" id="btn-export" title="Export your log to a JSON file">Export</button>
+        <button class="btn ghost" id="btn-import" title="Import a previously exported JSON file">Import</button>
+      </div>
+    </header>
+
+    <div class="grid grid-2">
+      <section class="card section">
+        <div class="space">
+          <div class="pill">🧪 <span id="db-count">--</span> foods in database</div>
+          <div class="flex">
+            <button class="btn secondary" id="btn-add-custom">Add Custom Food</button>
+            <button class="btn danger" id="btn-clear">Clear Log</button>
+          </div>
+        </div>
+
+        <div class="searchbar" style="margin-top:12px">
+          <div class="suggestions" style="flex:1">
+            <input id="search" type="text" placeholder="Search foods (e.g., rice, banana, egg)…" autocomplete="off" />
+            <div id="dropdown" class="dropdown hidden" role="listbox" aria-label="Food suggestions"></div>
+          </div>
+          <input id="grams" type="number" min="1" step="1" value="100" style="max-width:120px" />
+          <button class="btn" id="btn-add">Add</button>
+        </div>
+
+        <div class="rows" style="margin-top:14px">
+          <div class="thead small">
+            <div>Food</div><div>Grams</div><div>kcal</div><div>Protein</div><div>Carbs</div><div>Fat</div><div></div>
+          </div>
+          <div id="log"></div>
+        </div>
+      </section>
+
+      <aside class="card section">
+        <div class="space">
+          <h3 style="margin:0">Totals</h3>
+          <span class="tag" id="entry-count">0 items</span>
+        </div>
+        <div class="totals" style="margin-top:12px">
+          <div class="stat"><div class="val" id="t-cal">0</div><div class="muted">kcal</div></div>
+          <div class="stat"><div class="val" id="t-pro">0 g</div><div class="muted">Protein</div></div>
+          <div class="stat"><div class="val" id="t-car">0 g</div><div class="muted">Carbs</div></div>
+          <div class="stat"><div class="val" id="t-fat">0 g</div><div class="muted">Fat</div></div>
+        </div>
+        <div class="divider"></div>
+        <div class="space small">
+          <span>Macro ratio</span>
+          <span class="kpi" id="kpi-cal-per-100">— kcal / 100 g (avg)</span>
+        </div>
+        <canvas id="chart" width="500" height="260" aria-label="Macro chart"></canvas>
+        <div style="margin-top:8px" class="small muted">Tip: Click values in the table to edit grams. Data is approximate.</div>
+      </aside>
+    </div>
+
+    <div class="footer">Made with ❤️ for quick planning. No tracking, your data stays in your browser (LocalStorage). Add more foods via “Add Custom Food”.</div>
+  </div>
+
+  <!-- Custom Food Modal -->
+  <dialog id="modal" style="border:0; border-radius:16px; padding:0; background:#0f1533; color:var(--text); width:min(560px, 92vw)">
+    <form method="dialog" class="section">
+      <div class="space" style="margin-bottom:8px">
+        <h3 style="margin:0">Add Custom Food</h3>
+        <button class="btn ghost" value="close">✕</button>
+      </div>
+      <div class="grid" style="grid-template-columns: 1.4fr repeat(4, .6fr); gap:10px">
+        <input id="cf-name" placeholder="Name (e.g., Homemade Dal)" required />
+        <input id="cf-cal" type="number" min="0" step="1" placeholder="kcal /100g" required />
+        <input id="cf-pro" type="number" min="0" step="0.1" placeholder="Protein g" required />
+        <input id="cf-car" type="number" min="0" step="0.1" placeholder="Carbs g" required />
+        <input id="cf-fat" type="number" min="0" step="0.1" placeholder="Fat g" required />
+      </div>
+      <div class="space" style="margin-top:12px">
+        <span class="small muted">Values are per 100 g.</span>
+        <div class="right flex">
+          <button class="btn secondary" id="cf-save" value="save">Save</button>
+        </div>
+      </div>
+    </form>
+  </dialog>
+
+  <input id="file" type="file" accept="application/json" class="hidden" />
+
+  <script>
+  // --- Food database (per 100 g). Values approximate. ---
+  const BASE_DB = [
+    { n:"White rice, cooked", cal:130, pro:2.4, car:28.2, fat:0.3 },
+    { n:"Brown rice, cooked", cal:123, pro:2.7, car:25.6, fat:1.0 },
+    { n:"Rice, uncooked", cal:360, pro:6.7, car:79.0, fat:0.6 },
+    { n:"Chapati (whole wheat)", cal:250, pro:7.8, car:43.0, fat:4.0 },
+    { n:"Dal (lentil curry)", cal:116, pro:7.6, car:16.0, fat:2.0 },
+    { n:"Boiled lentils", cal:116, pro:9.0, car:20.1, fat:0.4 },
+    { n:"Black gram (boiled)", cal:105, pro:8.9, car:18.2, fat:0.6 },
+    { n:"Kidney beans, cooked", cal:127, pro:8.7, car:22.8, fat:0.5 },
+    { n:"Chickpeas, cooked", cal:164, pro:8.9, car:27.4, fat:2.6 },
+    { n:"Paneer", cal:265, pro:18.0, car:3.4, fat:20.0 },
+    { n:"Tofu, firm", cal:144, pro:17.0, car:3.0, fat:8.7 },
+    { n:"Chicken breast, cooked", cal:165, pro:31.0, car:0.0, fat:3.6 },
+    { n:"Chicken thigh, cooked", cal:209, pro:26.0, car:0.0, fat:10.9 },
+    { n:"Egg, whole", cal:143, pro:13.0, car:1.1, fat:9.5 },
+    { n:"Egg white", cal:52, pro:11.0, car:0.7, fat:0.2 },
+    { n:"Egg yolk", cal:322, pro:16.0, car:3.6, fat:27.0 },
+    { n:"Milk, cow (3.5%)", cal:61, pro:3.2, car:4.8, fat:3.3 },
+    { n:"Yogurt, plain", cal:59, pro:10.0, car:3.6, fat:0.4 },
+    { n:"Ghee", cal:900, pro:0.0, car:0.0, fat:100.0 },
+    { n:"Mustard oil", cal:884, pro:0.0, car:0.0, fat:100.0 },
+    { n:"Banana", cal:89, pro:1.1, car:22.8, fat:0.3 },
+    { n:"Apple", cal:52, pro:0.3, car:14.0, fat:0.2 },
+    { n:"Orange", cal:47, pro:0.9, car:12.0, fat:0.1 },
+    { n:"Mango", cal:60, pro:0.8, car:15.0, fat:0.4 },
+    { n:"Papaya", cal:43, pro:0.5, car:11.0, fat:0.3 },
+    { n:"Pumpkin, cooked", cal:20, pro:1.0, car:5.0, fat:0.1 },
+    { n:"Potato, boiled", cal:87, pro:1.9, car:20.0, fat:0.1 },
+    { n:"Sweet potato, boiled", cal:86, pro:1.6, car:20.1, fat:0.1 },
+    { n:"Tomato", cal:18, pro:0.9, car:3.9, fat:0.2 },
+    { n:"Onion", cal:40, pro:1.1, car:9.3, fat:0.1 },
+    { n:"Spinach", cal:23, pro:2.9, car:3.6, fat:0.4 },
+    { n:"Cauliflower", cal:25, pro:1.9, car:5.0, fat:0.3 },
+    { n:"Cabbage", cal:25, pro:1.3, car:6.0, fat:0.1 },
+    { n:"Broccoli", cal:34, pro:2.8, car:7.0, fat:0.4 },
+    { n:"Cucumber", cal:15, pro:0.7, car:3.6, fat:0.1 },
+    { n:"Peanuts (dry roasted)", cal:585, pro:25.8, car:16.1, fat:49.7 },
+    { n:"Almonds", cal:579, pro:21.2, car:21.7, fat:49.9 },
+    { n:"Walnuts", cal:654, pro:15.2, car:13.7, fat:65.2 },
+    { n:"Cashews", cal:553, pro:18.2, car:30.2, fat:43.9 },
+    { n:"Dates (dry)", cal:282, pro:2.5, car:75.0, fat:0.4 },
+    { n:"Raisins", cal:299, pro:3.1, car:79.2, fat:0.5 },
+    { n:"Bread, white", cal:266, pro:8.8, car:49.0, fat:3.3 },
+    { n:"Bread, brown", cal:247, pro:9.0, car:41.0, fat:3.3 },
+    { n:"Oats, dry", cal:389, pro:16.9, car:66.3, fat:6.9 },
+    { n:"Corn flakes", cal:357, pro:7.5, car:84.0, fat:0.4 },
+    { n:"Noodles, cooked", cal:138, pro:4.5, car:25.0, fat:2.1 },
+    { n:"Maggi noodles (dry)", cal:471, pro:9.9, car:61.5, fat:18.9 },
+    { n:"Buff (water buffalo) lean", cal:143, pro:28.0, car:0.0, fat:3.0 },
+    { n:"Goat (mutton) cooked", cal:215, pro:25.0, car:0.0, fat:13.0 },
+    { n:"Fish (rohu) cooked", cal:140, pro:20.0, car:0.0, fat:6.0 },
+    { n:"Fish (tilapia) cooked", cal:128, pro:26.0, car:0.0, fat:2.7 },
+    { n:"Soy chunks (TVP), cooked", cal:154, pro:16.6, car:9.0, fat:6.0 },
+    { n:"Soy milk, unsweetened", cal:33, pro:2.9, car:0.7, fat:1.6 },
+    { n:"Coconut chutney", cal:240, pro:3.0, car:6.0, fat:22.0 },
+    { n:"Aloo tarkari (potato curry)", cal:110, pro:2.0, car:16.0, fat:4.0 },
+    { n:"Chicken curry", cal:180, pro:17.0, car:4.0, fat:10.0 },
+    { n:"Momo (chicken) per piece", cal:45, pro:2.3, car:4.8, fat:1.7, unit:"piece" },
+    { n:"Momo (veg) per piece", cal:35, pro:1.7, car:5.0, fat:0.8, unit:"piece" },
+    { n:"Boiled egg (1 large)", cal:78, pro:6.3, car:0.6, fat:5.3, unit:"piece" }
+  ];
+
+  const DB_KEY = 'fcc_db_v1';
+  const LOG_KEY = 'fcc_log_v1';
+
+  const state = {
+    db: [],
+    log: [], // {id, grams}
+    selectedIndex: -1 // dropdown highlight
+  };
+
+  function load(){
+    const savedDB = JSON.parse(localStorage.getItem(DB_KEY) || 'null');
+    state.db = savedDB && Array.isArray(savedDB) ? savedDB : BASE_DB;
+    const savedLog = JSON.parse(localStorage.getItem(LOG_KEY) || '[]');
+    state.log = Array.isArray(savedLog) ? savedLog : [];
+    document.getElementById('db-count').textContent = state.db.length;
+    render();
+  }
+
+  function persist(){
+    localStorage.setItem(DB_KEY, JSON.stringify(state.db));
+    localStorage.setItem(LOG_KEY, JSON.stringify(state.log));
+  }
+
+  // --- Search & suggestions ---
+  const $search = document.getElementById('search');
+  const $dropdown = document.getElementById('dropdown');
+  $search.addEventListener('input', onSearch);
+  $search.addEventListener('keydown', onSearchKey);
+
+  function onSearch(){
+    const q = $search.value.trim().toLowerCase();
+    if(!q){ hideDropdown(); return; }
+    const results = state.db
+      .map((x,i)=>({i, x}))
+      .filter(({x})=> x.n.toLowerCase().includes(q))
+      .slice(0, 30);
+    showDropdown(results);
+  }
+
+  function onSearchKey(e){
+    const items = $dropdown.querySelectorAll('button');
+    if($dropdown.classList.contains('hidden')) return;
+    if(e.key==='ArrowDown'){ e.preventDefault(); state.selectedIndex = Math.min(items.length-1, state.selectedIndex+1); updateHighlight(items); }
+    else if(e.key==='ArrowUp'){ e.preventDefault(); state.selectedIndex = Math.max(0, state.selectedIndex-1); updateHighlight(items); }
+    else if(e.key==='Enter'){ e.preventDefault(); if(state.selectedIndex>=0) items[state.selectedIndex].click(); else document.getElementById('btn-add').click(); }
+    else if(e.key==='Escape'){ hideDropdown(); }
+  }
+
+  function updateHighlight(items){
+    items.forEach((el,idx)=> el.setAttribute('aria-selected', idx===state.selectedIndex));
+    if(items[state.selectedIndex]) items[state.selectedIndex].scrollIntoView({block:'nearest'});
+  }
+
+  function showDropdown(results){
+    $dropdown.innerHTML = results.map(({i,x})=>`<button data-id="${i}">${x.n} <span class="muted small">${x.unit||'per 100 g'}</span></button>`).join('');
+    $dropdown.classList.remove('hidden');
+    state.selectedIndex = -1;
+  }
+  function hideDropdown(){ $dropdown.classList.add('hidden'); state.selectedIndex=-1; }
+  $dropdown.addEventListener('click', (e)=>{
+    const btn = e.target.closest('button');
+    if(!btn) return; const id = +btn.dataset.id; $search.value = state.db[id].n; hideDropdown();
+  });
+
+  // --- Add to log ---
+  document.getElementById('btn-add').addEventListener('click', ()=>{
+    const name = $search.value.trim();
+    if(!name) return; 
+    const gramsInput = document.getElementById('grams');
+    let grams = +gramsInput.value; if(!Number.isFinite(grams) || grams<=0) grams=100;
+
+    // find by name
+    let id = state.db.findIndex(f=> f.n.toLowerCase() === name.toLowerCase());
+    if(id===-1){
+      // try partial
+      const found = state.db.findIndex(f=> f.n.toLowerCase().includes(name.toLowerCase()));
+      if(found!==-1) id = found; else { alert('Food not found. Add as custom food.'); return; }
+    }
+
+    const item = state.db[id];
+    // If unit is piece, interpret grams as number of pieces
+    const entry = { id, grams, piece: !!item.unit };
+    state.log.push(entry);
+    persist(); render();
+    $search.value=''; gramsInput.value = item.unit ? 1 : 100; hideDropdown(); $search.focus();
+  });
+
+  // --- Render log ---
+  const $log = document.getElementById('log');
+  function render(){
+    $log.innerHTML = '';
+    for(const [idx, entry] of state.log.entries()){
+      const food = state.db[entry.id];
+      const base = food.unit ? 1 : 100; // per piece or per 100g
+      const factor = (entry.grams / base);
+      const cal = (food.cal * factor);
+      const pro = (food.pro * factor);
+      const car = (food.car * factor);
+      const fat = (food.fat * factor);
+      const row = document.createElement('div');
+      row.className = 'row';
+      row.innerHTML = `
+        <div>
+          <div>${food.n}</div>
+          <div class="small muted">${food.unit ? 'per '+food.unit : 'per 100 g'}</div>
+        </div>
+        <div><input type="number" min="${food.unit?1:1}" step="${food.unit?1:1}" value="${entry.grams}" data-idx="${idx}" aria-label="${food.unit? 'pieces':'grams'}"/></div>
+        <div>${cal.toFixed(0)}</div>
+        <div>${pro.toFixed(1)}</div>
+        <div>${car.toFixed(1)}</div>
+        <div>${fat.toFixed(1)}</div>
+        <div><button class="btn ghost" data-del="${idx}">🗑</button></div>
+      `;
+      $log.appendChild(row);
+    }
+    document.getElementById('entry-count').textContent = state.log.length + (state.log.length===1? ' item':' items');
+    updateTotals();
+  }
+
+  $log.addEventListener('change', (e)=>{
+    const input = e.target.closest('input[type=number]');
+    if(!input) return; const idx = +input.dataset.idx; let v = +input.value; if(!Number.isFinite(v)||v<=0) v = 100; state.log[idx].grams = v; persist(); render();
+  });
+  $log.addEventListener('click', (e)=>{
+    const btn = e.target.closest('button[data-del]'); if(!btn) return; const idx = +btn.dataset.del; state.log.splice(idx,1); persist(); render();
+  });
+
+  // --- Totals & chart ---
+  const $tcal = document.getElementById('t-cal');
+  const $tpro = document.getElementById('t-pro');
+  const $tcar = document.getElementById('t-car');
+  const $tfat = document.getElementById('t-fat');
+  const $kpi = document.getElementById('kpi-cal-per-100');
+
+  function updateTotals(){
+    let cal=0, pro=0, car=0, fat=0, totalGrams=0;
+    for(const entry of state.log){
+      const food = state.db[entry.id];
+      const base = food.unit ? 1 : 100;
+      const factor = (entry.grams / base);
+      cal += food.cal * factor;
+      pro += food.pro * factor;
+      car += food.car * factor;
+      fat += food.fat * factor;
+      totalGrams += food.unit ? 0 : entry.grams; // only sum grams when unit is grams
+    }
+    $tcal.textContent = Math.round(cal);
+    $tpro.textContent = pro.toFixed(1) + ' g';
+    $tcar.textContent = car.toFixed(1) + ' g';
+    $tfat.textContent = fat.toFixed(1) + ' g';
+    const avg = totalGrams>0 ? (cal / totalGrams * 100) : 0; // kcal per 100 g across gram-based items
+    $kpi.textContent = (avg? avg.toFixed(0) : '—') + ' kcal / 100 g (avg)';
+    drawChart(pro,car,fat);
+  }
+
+  function drawChart(p,c,f){
+    const ctx = document.getElementById('chart').getContext('2d');
+    ctx.clearRect(0,0,ctx.canvas.width, ctx.canvas.height);
+    const total = p+c+f; if(total<=0){
+      ctx.fillStyle = '#2b3564';
+      ctx.font = '14px system-ui';
+      ctx.fillText('No data yet', 20, 30);
+      return;
+    }
+    const vals = [p,c,f];
+    const labels = ['Protein','Carbs','Fat'];
+    const cx = ctx.canvas.width/2, cy = ctx.canvas.height/2, r = Math.min(cx,cy)-20;
+    let start = -Math.PI/2;
+    const colors = ['#7aa2ff','#5ee1b9','#ffb86b'];
+    vals.forEach((v,i)=>{
+      const angle = (v/total)*Math.PI*2;
+      ctx.beginPath();
+      ctx.moveTo(cx,cy); ctx.arc(cx,cy,r,start,start+angle); ctx.closePath();
+      ctx.fillStyle = colors[i]; ctx.fill();
+      start += angle;
+    });
+    // legend
+    labels.forEach((lb,i)=>{
+      ctx.fillStyle = colors[i]; ctx.fillRect(18, 18+24*i, 14, 14);
+      ctx.fillStyle = '#dbe4ff'; ctx.font = '12px system-ui';
+      const pct = (vals[i]/total*100).toFixed(0);
+      ctx.fillText(lb+` ${pct}%`, 40, 30+24*i);
+    });
+  }
+
+  // --- Custom food modal ---
+  const $modal = document.getElementById('modal');
+  document.getElementById('btn-add-custom').addEventListener('click', ()=> $modal.showModal());
+  document.getElementById('cf-save').addEventListener('click', (e)=>{
+    e.preventDefault();
+    const name = document.getElementById('cf-name').value.trim();
+    const cal = +document.getElementById('cf-cal').value;
+    const pro = +document.getElementById('cf-pro').value;
+    const car = +document.getElementById('cf-car').value;
+    const fat = +document.getElementById('cf-fat').value;
+    if(!name || [cal,pro,car,fat].some(x=>!Number.isFinite(x) || x<0)) return alert('Please fill all fields with valid numbers.');
+    state.db.unshift({ n:name, cal, pro, car, fat });
+    document.getElementById('db-count').textContent = state.db.length;
+    persist();
+    $modal.close();
+    document.getElementById('cf-name').value = '';
+    ['cf-cal','cf-pro','cf-car','cf-fat'].forEach(id=> document.getElementById(id).value='');
+  });
+
+  // --- Export/Import ---
+  document.getElementById('btn-export').addEventListener('click', ()=>{
+    const data = { db: state.db, log: state.log, exportedAt: new Date().toISOString() };
+    const blob = new Blob([JSON.stringify(data,null,2)], {type:'application/json'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href = url; a.download = 'food_calculator_export.json'; a.click();
+    setTimeout(()=> URL.revokeObjectURL(url), 1000);
+  });
+
+  const $file = document.getElementById('file');
+  document.getElementById('btn-import').addEventListener('click', ()=> $file.click());
+  $file.addEventListener('change', async ()=>{
+    const f = $file.files[0]; if(!f) return; try{
+      const text = await f.text();
+      const data = JSON.parse(text);
+      if(!data || !Array.isArray(data.db) || !Array.isArray(data.log)) throw new Error('Bad file');
+      state.db = data.db; state.log = data.log; persist(); render();
+      document.getElementById('db-count').textContent = state.db.length;
+      alert('Import successful');
+    }catch(err){ alert('Import failed: '+err.message); }
+    finally{ $file.value=''; }
+  });
+
+  // --- Clear log ---
+  document.getElementById('btn-clear').addEventListener('click', ()=>{
+    if(confirm('Clear all items from your log?')){ state.log = []; persist(); render(); }
+  });
+
+  // Init
+  load();
+  </script>
+</body>
+</html>
